@@ -124,6 +124,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->priority = 0;
+  p->boost = 1;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -441,24 +443,37 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+// En kernel/proc.c
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-
   c->proc = 0;
+
   for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting.
+    // Enable interrupts on this processor.
     intr_on();
 
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+
       if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
+        // Incrementa la prioridad del proceso usando el boost
+        p->priority += p->boost;
+
+        // Si la prioridad es 9, cambia el boost a -1
+        if(p->priority >= 9) {
+          p->boost = -1;
+        }
+
+        // Si la prioridad es 0, cambia el boost a 1
+        if(p->priority <= 0) {
+          p->boost = 1;
+        }
+
+        // Switch to chosen process. It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
@@ -468,17 +483,20 @@ scheduler(void)
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
         found = 1;
       }
       release(&p->lock);
     }
+
     if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+      // If no process was found to run, this CPU should go to sleep
       intr_on();
       asm volatile("wfi");
     }
   }
 }
+
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
