@@ -6,6 +6,10 @@
 #include "spinlock.h"
 #include "proc.h"
 
+int mprotect(uint64 addr, int len);
+int munprotect(uint64 addr, int len);
+
+
 uint64
 sys_exit(void)
 {
@@ -91,3 +95,66 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+uint64
+sys_mprotect(void) {
+    uint64 addr;
+    int len;
+
+    // Obtener los argumentos de la syscall
+    argaddr(0, &addr);
+    argint(1, &len);
+
+    // Llamar a la implementación de mprotect
+    return mprotect(addr, len);
+}
+
+uint64
+sys_munprotect(void) {
+    uint64 addr;
+    int len;
+
+    // Obtener los argumentos de la syscall
+    argaddr(0, &addr);
+    argint(1, &len);
+
+    // Llamar a la implementación de munprotect
+    return munprotect(addr, len);
+}
+
+int
+mprotect(uint64 addr, int len) {
+    if (addr == 0 || len <= 0 || addr % PGSIZE != 0) {
+        return -1;
+    }
+
+    int num_pages = (len + PGSIZE - 1) / PGSIZE;
+    struct proc *p = myproc();
+    for (int i = 0; i < num_pages; i++) {
+        pte_t *pte = walk(p->pagetable, addr + i * PGSIZE, 0);
+        if (pte == 0 || (*pte & PTE_V) == 0) {
+            return -1;
+        }
+        *pte &= ~PTE_W;  // Deshabilitar el bit de escritura
+    }
+
+    return 0;
+}
+int
+munprotect(uint64 addr, int len) {
+    if (addr == 0 || len <= 0 || addr % PGSIZE != 0) {
+        return -1;
+    }
+
+    int num_pages = (len + PGSIZE - 1) / PGSIZE;
+    struct proc *p = myproc();
+    for (int i = 0; i < num_pages; i++) {
+        pte_t *pte = walk(p->pagetable, addr + i * PGSIZE, 0);
+        if (pte == 0 || (*pte & PTE_V) == 0) {
+            return -1;
+        }
+        *pte |= PTE_W;  // Habilitar el bit de escritura
+    }
+
+    return 0;
+}
+
