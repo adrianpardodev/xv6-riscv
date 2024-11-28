@@ -68,31 +68,54 @@ sys_dup(void)
 uint64
 sys_read(void)
 {
-  struct file *f;
-  int n;
-  uint64 p;
+    struct file *f;
+    int n;
+    uint64 p;
 
-  argaddr(1, &p);
-  argint(2, &n);
-  if(argfd(0, 0, &f) < 0)
-    return -1;
-  return fileread(f, p, n);
+    // Obtener parámetros de la llamada al sistema
+    argaddr(1, &p);
+    argint(2, &n);
+    if (argfd(0, 0, &f) < 0)
+        return -1;
+
+    // Verificar permisos de lectura
+    if ((f->ip->perm & 1) == 0) { // Verifica si no tiene permiso de lectura
+        return -1; // Retorna error si no tiene permiso
+    }
+
+    // Realizar lectura
+    return fileread(f, p, n);
 }
+
 
 uint64
 sys_write(void)
 {
-  struct file *f;
-  int n;
-  uint64 p;
-  
-  argaddr(1, &p);
-  argint(2, &n);
-  if(argfd(0, 0, &f) < 0)
-    return -1;
+    struct file *f;
+    int n;
+    uint64 p;
 
-  return filewrite(f, p, n);
+    // Obtener los argumentos de la llamada al sistema
+    argaddr(1, &p);
+    argint(2, &n);
+    if (argfd(0, 0, &f) < 0)
+        return -1;
+
+    // Verificar si el archivo es inmutable
+    if (f->ip->perm == 5) {
+        return -1; // Error: Archivo inmutable
+    }
+
+    // Verificar permisos de escritura
+    if ((f->ip->perm & 2) == 0) { // Sin permiso de escritura
+        return -1; // Error: No se permite escritura
+    }
+
+    // Realizar la escritura
+    return filewrite(f, p, n);
 }
+
+
 
 uint64
 sys_close(void)
@@ -503,3 +526,32 @@ sys_pipe(void)
   }
   return 0;
 }
+
+int sys_chmod(void)
+{
+    char path[MAXPATH]; // Buffer para almacenar la ruta del archivo
+    int mode;
+    struct inode *ip;
+
+    // Obtener los argumentos
+    if (argstr(0, path, MAXPATH) < 0)
+        return -1;
+
+    if (argint(1, &mode) < 0)
+        return -1;
+
+    // Buscar el inodo asociado al archivo
+    ip = namei(path);
+    if (ip == 0)
+        return -1;
+
+    // Si el archivo es inmutable, no permitir cambiar permisos
+    if (ip->perm == 5)
+        return -1;
+
+    // Actualizar los permisos
+    ip->perm = mode;
+    iupdate(ip); // Actualizar el inodo en disco
+    return 0;
+}
+
